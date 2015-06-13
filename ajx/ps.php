@@ -1,84 +1,78 @@
 <?php
 //REQUIRE TESTING FUNCTIONS FILE
-chdir(__DIR__);
-require '../fxn/fxn.php';
+require dirname(dirname(__FILE__)).'/fxn/fxn.php';
 
-$response = array();
-if($_POST['take_quiz']){
-    $resp = array();
-    $resp['code'] = 1;
-    $quiz = returnQuiz();
-    $q_content = '<h1>Employee Training Quiz</h1>
-                    <div class="well">
-                        <b>Note:</b> If you close your browser window you\'ll have to start from the beginning of the quiz.
-                    </div>
-                    <form id="quiz-id" action="" method="post">
-                    <ul class="quiz-area">';
-                    $q_content .= '</ul>
-                    <input type="hidden" name="next_chunk" value="<?php echo $next_chunk;?>" />
-                    <button type="submit" class="btn pull-right btn-primary" id="nxt_chunk<?php echo $next_chunk; ?>">Next</button>
-                    </form>';
-    $resp['quiz'] = $quiz;
-}
-
-//if posting quiz
-if($_POST['aq']){
-    //question ids in question chunk
-    $chunked_ids = $_POST['chunked_ids'];
-    
-    //decode the posted quiz data
-    $decoded = urldecode($_POST['aq']);
-    
-    //separate each answer & place into one array
-    $answers = explode("&",$decoded);
-    
-    //create array for multi-answer tracking
-    $running_actual_answers = array();
-    
-    /*//create counter for multi-answer counting
-    $acounter = 0;*/
-    $running_question_id = 0;
-    $question_correct_answers = array();
-    
-    //create empty array for correct quiz answers
-    $quiz_correct_answers = array();
-    
-    //create empty array for questions answered by user
-    $answered_questions = array();
-    
-    //loop through each answer given
-    foreach($answers as $answer){
-        //answer is formatted as 'question_number=question_id:answer_id', so parse it
-        $answer = substr($answer, strpos($answer, '=')+1, strlen($answer));
-        
-        //separate question id from answer id
-        $answer_parts = explode(':', $answer);
-        
-        //create vars for each
-        $question_id = $answer_parts[0];
-        $answer_id = $answer_parts[1];
-        
-        $answered_questions[$question_id][] = $answer_id;
+//for request payload post parsing
+$request_body = file_get_contents('php://input');
+$json_data = json_decode($request_body);
+$response = array("code"=>0);
+if(!empty($json_data->load_quiz)){
+    if(!empty($json_data->name) && !empty($json_data->email)){
+        $response['code'] = 1;
     }
-    foreach($answered_questions as $question_id=>$answer){
-        if(getQuestionCorrectAnswers($question_id) == $answer){
-            $quiz_correct_answers[] = $question_id;
+}
+if(!empty($json_data->next_chunk) && !empty($json_data->answeredQuestions)){
+    $answered_questions = $json_data->answeredQuestions;
+    $incorrect_question_ids = array();
+    foreach($answered_questions as $answered_question){
+        $question_id = $answered_question->id;
+        if(!empty($answered_question->selected_answer)){
+            $answer = $answered_question->selected_answer;
+            //if answer is object(multi-answer)
+            if(is_object($answer) || is_array($answer)){
+                $choice_count = 0;
+                foreach($answer as $choice){
+                    if($choice != NULL){
+                        //count choices
+                        $choice_count +=1;
+                        //if answer isn't correct
+                        if(!isCorrectAnswer($question_id,$choice)){
+                            $incorrect_question_ids[] = $question_id;
+                            //if one answer is incorrect, the question is wrong, so break
+                            break;
+                        }
+                    }
+                }
+                //ensure correct submitted count is == to actual correct answer count
+                if($choice_count != getCorrectAnswerCountForQuestionId($question_id)){
+                    $incorrect_question_ids[] = $question_id;
+                }
+            }
+            //if answer is single-answer
+            else{
+                if(!isCorrectAnswer($question_id,$answer)){
+                    $incorrect_question_ids[] = $question_id;
+                }
+            }
+        }
+        //else if no answers were selected for question
+        else{
+            $incorrect_question_ids[] = $question_id;
         }
     }
-    //if all answers correct
-    if($quiz_correct_answers == getQuestionIDs()){
-        $resp['code'] = 1;
-        $subject = "Employee Quiz Completion";
-        $msg = $_POST['name']." (".$_POST['email'].") has successfully completed the employee quiz.\r\n\r\nRegards, Stanford Recreation";
-        //send emails
-        sendQuizCompletionEmail($_POST['email'], $subject, $msg);
+    //if there are any incorrect answers, return the,
+    if(count($incorrect_question_ids)>0){
+        $response['incorrect_question_ids'] = $incorrect_question_ids;
     }
-    //else if got some questions wrong
+    //else if no incorrect answers, give the ok to display more questions
     else{
-        $resp['correct_answers'] = $quiz_correct_answers;
-        $resp['incorrect_answers'] = array_diff(getQuestionIDs(), $quiz_correct_answers);
+        //they got all questions correct, so thats the count
+        $response['correct_questions_count'] = count($answered_questions);
+        $response['code'] = 1;
     }
+}
+//if testing complete
+if(!empty($json_data->testing_complete)){
+    $tetser_name = $json_data->name;
+    $tester_email = $json_data->email;
+    $mail_subject = "Employee Quiz Completion";
+    $mail_message = $tetser_name." (".$tester_email.") has successfully completed the employee quiz.\r\n\r\nRegards, [YOUR COMPANY]";
+    $mail_headers = 'From: [YOUR COMPANY] <noreply@YOURCOMPANY.COM>' . "\r\n" .
+    'Reply-To: noreply@YOURCOMPANY.COM' . "\r\n" .
+    'X-Mailer: PHP/' . phpversion();
+    //send emails
+    sendQuizCompletionEmail($tester_email, $mail_subject, $mail_message,$mail_headers);
 }
 
 header('Content-type: application/json');
-echo json_encode($resp);
+echo json_encode($response);

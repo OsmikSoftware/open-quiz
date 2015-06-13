@@ -3,14 +3,14 @@
  * CORE FUNCTIONS FILE FOR STAFF TESTING PLATFORM
  * AUTHOR: MIKOS J
  * DATE: ~9/2014
+ * LAST UPDATED: 6/13/15
  */
 
 //DB INFO
-define("DB_SERVER", "your server name");
-define("DB_USER", "your server user name");
-define("DB_PASS", "your server password");
-define("DB_NAME", "your db name");
-
+define("DB_SERVER", "dbserver");
+define("DB_USER", "dbuser");
+define("DB_PASS", "dbpass");
+define("DB_NAME", "dbname");
 //FUNCTION TO INITIALIZE A DB CONNECTION. ACTUAL DB CREDENTIALS MUST BE DEFINED SEPARATELY
 function getDBConnection() {
     return new mysqli(DB_SERVER, DB_USER, DB_PASS, DB_NAME);
@@ -34,7 +34,7 @@ function getRowsQuery($query) {
     return $data;
 }
 
-//IDEAL FOR SINGLE-ACTION QUERIES TO BE EXECUTED, BECAUSE IT RETURNS THE AFFECTED ROWS(RETURNS 1 ON SUCCESS)
+//IDEAL FOR SINGLE-ACTION QUERIES TO BE EXECUTED, BECAUSE IT RETURNS THE AFFECTED ROWS(RETURN VALUE '1' IS IDEAL)
 function actionQuery($query) {
     $conn = getDBConnection();
     $stmt = $conn->prepare($query);
@@ -42,66 +42,24 @@ function actionQuery($query) {
     return $conn->affected_rows;
 }
 
-function getQuestions(){
-    return getRowsQuery("SELECT * FROM questions");
+//questions and answers to display to quiz
+function getQuizQuestions(){
+    $questions = getRowsQuery("SELECT * FROM questions");
+    $answers = getRowsQuery("SELECT question_id,answer FROM answers");
+    $quiz_questions = array('questions'=>$questions,'answers'=>$answers);
+    return $quiz_questions;
 }
-function getQuestionIDs(){
-    $question_ids = array();
-    $qdata = getRowsQuery("SELECT id FROM questions");
-    foreach($qdata as $question_id){
-        $question_ids[] = $question_id['id'];
-    }
-    return $question_ids;
+function getCorrectAnswerCountForQuestionId($question_id){
+    return count(getRowsQuery("SELECT id FROM answers WHERE question_id={$question_id} AND is_correct=1"));
 }
-function getQuestionByID($question_id){
-    return getRowQuery("SELECT * FROM questions WHERE id={$question_id}");
-}
-function checkAnswer($answer_id){
-    $adata = getRowQuery("SELECT is_correct FROM answers WHERE id={$answer_id}");
-    if($adata['is_correct']):
-        return 1;
-    else:
-        return 0;
-    endif;
-}
-function getQuestionAnswers($question_id){
-    return getRowsQuery("SELECT * FROM answers WHERE question_id={$question_id}");
-}
-function getQuestionCorrectAnswers($question_id){
-    $answer_ids = array();
-    $adata = getRowsQuery("SELECT id FROM answers WHERE question_id={$question_id} AND is_correct=1");
-    foreach($adata as $answer_id){
-        $answer_ids[] = $answer_id['id'];
-    }
-    return $answer_ids;
+function isCorrectAnswer($question_id,$string_answer){
+    return getRowQuery("SELECT answer FROM answers WHERE question_id={$question_id} AND answer='{$string_answer}' AND is_correct=1");
 }
 
-//BUILDS & RETURNS THE FULL QUIZ
-function returnQuiz(){
-    //LOAD CLASSES
-    chdir(__DIR__);
-    require_once '../static/classes/Quiz.php';
-    require_once '../static/classes/Question.php';
+function sendQuizCompletionEmail($email, $mailsubject, $message,$headers=''){
+    $email  .=  ', '; // note the comma
+    //comma-separated email addresses(e.g. for management, etc.)
     
-    $quiz = new Quiz();
-    $questions = getQuestions();
-    foreach($questions as $db_question){
-        $question = new Question();
-        $question->setID($db_question['id']);
-        $question->setQuestion($db_question['question']);
-        $question->setType($db_question['type']);
-        $answers = getRowsQuery("SELECT * FROM answers WHERE question_id={$db_question['id']}");
-        foreach($answers as $db_answer){
-            $question->addAnswer($db_answer['id'].':'.$db_answer['answer']);
-        }
-        $quiz->addQuestion($question);
-    }
-    return $quiz;
-}
-
-//FUNCTION TO EXECUTE UPON SUCCESSFUL QUIZ COMPLETION
-function sendQuizCompletionEmail($email, $mailsubject, $message){
-    $email .= "add additional recipients here(testing administrator, other staff members,etc.)";
-    $headers = "Place your custom headers here";
+    //$email .= 'admin1@testadmin.com,admin2@testadmin.com, etc.';
     mail($email, $mailsubject, $message, $headers);
 }
