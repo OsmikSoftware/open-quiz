@@ -57,9 +57,9 @@ function isCorrectAnswer($question_id,$string_answer){
 }
 
 function sendQuizCompletionEmail($email, $mailsubject, $message,$headers=''){
-    $email  .=  ', '; // note the comma
+    //uncomment the first comma if you plan to add additional emails
+    //$email  .=  ', '; // note the comma
     //comma-separated email addresses(e.g. for management, etc.)
-    
     //$email .= 'admin1@testadmin.com,admin2@testadmin.com, etc.';
     mail($email, $mailsubject, $message, $headers);
 }
